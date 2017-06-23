@@ -26,12 +26,14 @@ matrix:
       env: DB=MYSQL PDO=1
     - php: 5.6
       env: DB=MYSQL BEHAT_TEST=1
+    - php: 7.1
+      env: DB=MYSQL CORE_RELEASE=3.6
 
 before_script:
  - composer self-update || true
  - phpenv rehash
  - phpenv config-rm xdebug.ini
- - git clone git://github.com/silverstripe-labs/silverstripe-travis-support.git ~/travis-support
+ - git clone git://github.com/silverstripe/silverstripe-travis-support.git ~/travis-support
  - "if [ \"$BEHAT_TEST\" = \"\" ]; then php ~/travis-support/travis_setup.php --source `pwd` --target ~/builds/ss; fi"
  - "if [ \"$BEHAT_TEST\" = \"1\" ]; then php ~/travis-support/travis_setup.php --source `pwd` --target ~/builds/ss --require silverstripe/behat-extension; fi"
  - cd ~/builds/ss
