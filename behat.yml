@@ -22,7 +22,6 @@ default:
       facebook_web_driver:
         browser: chrome
         wd_host: "http://127.0.0.1:9515" #chromedriver port
-      browser_name: chrome
 
     SilverStripe\BehatExtension\Extension:
       screenshot_path: %paths.base%/artifacts/screenshots
