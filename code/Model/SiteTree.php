@@ -2869,18 +2869,24 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
     /**
      * Stops extendCMSFields() being called on getCMSFields(). This is useful when you need access to fields added by
      * subclasses of SiteTree in a extension. Call before calling parent::getCMSFields(), and reenable afterwards.
+     *
+     * @deprecated 4.4.0 Use the configuration option SiteTree.runCMSFieldsExtensions instead
      */
     public static function disableCMSFieldsExtensions()
     {
+        Deprecation::notice('4.4', 'Use the configuration option SiteTree.runCMSFieldsExtensions instead');
         self::$runCMSFieldsExtensions = false;
     }
 
     /**
      * Reenables extendCMSFields() being called on getCMSFields() after it has been disabled by
      * disableCMSFieldsExtensions().
+     *
+     * @deprecated 4.4.0 Use the configuration option SiteTree.runCMSFieldsExtensions instead
      */
     public static function enableCMSFieldsExtensions()
     {
+        Deprecation::notice('4.4', 'Use the configuration option SiteTree.runCMSFieldsExtensions instead');
         self::$runCMSFieldsExtensions = true;
     }
 
