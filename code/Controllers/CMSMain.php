@@ -28,6 +28,7 @@ use SilverStripe\Core\Convert;
 use SilverStripe\Core\Environment;
 use SilverStripe\Core\Flushable;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\Forms\CompositeField;
 use SilverStripe\Forms\DateField;
 use SilverStripe\Forms\DropdownField;
 use SilverStripe\Forms\FieldGroup;
@@ -112,7 +113,8 @@ class CMSMain extends LeftAndMain implements CurrentPageIdentifier, PermissionPr
     private static $required_permission_codes = 'CMS_ACCESS_CMSMain';
 
     /**
-     * Should the archive warning message be dynamic based on the specific content? This is slow on larger sites and can be disabled.
+     * Should the archive warning message be dynamic based on the specific content? This is slow on larger sites and
+     * can be disabled.
      *
      * @config
      * @var bool
@@ -1302,8 +1304,12 @@ class CMSMain extends LeftAndMain implements CurrentPageIdentifier, PermissionPr
         $record = $this->getRecord($id);
 
         // Check parent form can be generated
+        // sboyd - this will call LeftAndMain::getEditForm() - LeftAndMain is the parent class of CMSMain
+        // sboyd - will go to SiteTree::getCMSActions 1st time here
         $form = parent::getEditForm($record, $fields);
+        // sboyd - ‌‌$form->validationResult()->isValid() is available from here ..
         if (!$form || !$record) {
+            // sboyd - does not return here i.e. $form does exist - so the rest of this function is used
             return $form;
         }
 
@@ -1347,6 +1353,7 @@ class CMSMain extends LeftAndMain implements CurrentPageIdentifier, PermissionPr
         if ($record->hasMethod('getAllCMSActions')) {
             $actions = $record->getAllCMSActions();
         } else {
+            // sboyd - goes to SiteTree::getCMSActions 2nd time here
             $actions = $record->getCMSActions();
 
             // Find and remove action menus that have no actions.
@@ -1370,6 +1377,23 @@ class CMSMain extends LeftAndMain implements CurrentPageIdentifier, PermissionPr
             /** @var FormAction $action */
             foreach ($actionsFlattened as $action) {
                 $action->setUseButtonTag(true);
+            }
+        }
+
+        // Set the save button to a dirty state if there are validation issues
+        // sboyd TODO: do we also need to do this for the publish button?
+        // <<<< sboyd - isValid() == true here ??? it should not be :-/
+        if (true || !$form->validationResult()->isValid()) {
+            // need $form->Actions(), $record->getCMSActions() does not work here
+            $actions = $form->Actions();
+            /** @var CompositeField $majorActions */
+            $majorActions = $actions->fieldByName('MajorActions');
+            /** @var FormAction $action */
+            foreach ($majorActions->getChildren() as $action) {
+                if ($action->getName() === 'action_save') {
+                    $action->removeExtraClass('btn-outline-primary font-icon-tick');
+                    $action->addExtraClass('btn-primary font-icon-save sboyd');
+                }
             }
         }
 
@@ -1407,6 +1431,7 @@ class CMSMain extends LeftAndMain implements CurrentPageIdentifier, PermissionPr
         $form->setRequestHandler(
             LeftAndMainFormRequestHandler::create($form, [$id])
         );
+
         return $form;
     }
 
