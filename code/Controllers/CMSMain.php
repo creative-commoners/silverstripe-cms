@@ -1383,19 +1383,19 @@ class CMSMain extends LeftAndMain implements CurrentPageIdentifier, PermissionPr
         // Set the save button to a dirty state if there are validation issues
         // sboyd TODO: do we also need to do this for the publish button?
         // <<<< sboyd - isValid() == true here ??? it should not be :-/
-        if (true || !$form->validationResult()->isValid()) {
-            // need $form->Actions(), $record->getCMSActions() does not work here
-            $actions = $form->Actions();
-            /** @var CompositeField $majorActions */
-            $majorActions = $actions->fieldByName('MajorActions');
-            /** @var FormAction $action */
-            foreach ($majorActions->getChildren() as $action) {
-                if ($action->getName() === 'action_save') {
-                    $action->removeExtraClass('btn-outline-primary font-icon-tick');
-                    $action->addExtraClass('btn-primary font-icon-save sboyd');
-                }
-            }
-        }
+//        if (true || !$form->validationResult()->isValid()) {
+//            // need $form->Actions(), $record->getCMSActions() does not work here
+//            $actions = $form->Actions();
+//            /** @var CompositeField $majorActions */
+//            $majorActions = $actions->fieldByName('MajorActions');
+//            /** @var FormAction $action */
+//            foreach ($majorActions->getChildren() as $action) {
+//                if ($action->getName() === 'action_save') {
+//                    $action->removeExtraClass('btn-outline-primary font-icon-tick');
+//                    $action->addExtraClass('btn-primary font-icon-save sboyd');
+//                }
+//            }
+//        }
 
         // TODO Can't merge $FormAttributes in template at the moment
         $form->addExtraClass('center ' . $this->BaseCSSClasses());
