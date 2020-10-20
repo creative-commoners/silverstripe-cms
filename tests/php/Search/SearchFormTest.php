@@ -189,6 +189,13 @@ class ZZZSearchFormTest extends FunctionalTest
 
         $results = $sf->getResults();
         $unpublishedPage = $this->objFromFixture(SiteTree::class, 'publicUnpublishedPage');
+
+        // Generate results on the Live stage for an accurate outcome
+        $results = Versioned::withVersionedMode(function () use ($sf) {
+            Versioned::set_stage(Versioned::LIVE);
+            return $sf->getResults();
+        });
+
         $this->assertNotContains(
             $unpublishedPage->ID,
             $results->column('ID'),
