@@ -8,6 +8,7 @@ use SilverStripe\CMS\Model\SiteTree;
 use SilverStripe\Control\Director;
 use SilverStripe\Control\HTTPResponse_Exception;
 use SilverStripe\Core\Config\Config;
+use SilverStripe\Dev\Deprecation;
 use SilverStripe\Dev\FunctionalTest;
 use SilverStripe\Versioned\Versioned;
 
@@ -204,7 +205,7 @@ class ContentControllerTest extends FunctionalTest
                 __DIR__
                 . '/themes/controllertest/templates/SilverStripe/CMS/Tests/Controllers/'
                 . 'ContentControllerTestPage_test.ss',
-                $viewer->templates()['main']
+                Deprecation::withSuppressedNotice(fn() => $viewer->templates())['main']
             );
         });
     }

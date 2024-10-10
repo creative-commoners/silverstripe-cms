@@ -297,9 +297,13 @@ class ContentController extends Controller
 
     /**
      * @return ArrayList<SiteTree>
+     * @deprecated 5.4.0 Use getMenu() instead. You can continue to use $Menu in templates.
      */
     public function Menu($level)
     {
+        Deprecation::withSuppressedNotice(
+            fn() => Deprecation::notice('5.4.0', 'Use getMenu() instead. You can continue to use $Menu in templates.')
+        );
         return $this->getMenu($level);
     }
 
