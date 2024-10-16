@@ -7,7 +7,6 @@ use Psr\SimpleCache\CacheInterface;
 use SilverStripe\Admin\CMSEditLinkExtension;
 use SilverStripe\Assets\Shortcodes\FileLinkTracking;
 use SilverStripe\CMS\Controllers\CMSMain;
-use SilverStripe\CMS\Controllers\CMSPageEditController;
 use SilverStripe\CMS\Controllers\ContentController;
 use SilverStripe\CMS\Controllers\ModelAsController;
 use SilverStripe\CMS\Controllers\RootURLController;
@@ -15,14 +14,11 @@ use SilverStripe\CMS\Forms\SiteTreeURLSegmentField;
 use SilverStripe\Control\ContentNegotiator;
 use SilverStripe\Control\Controller;
 use SilverStripe\Control\Director;
-use SilverStripe\Core\Cache\MemberCacheFlusher;
 use SilverStripe\Core\ClassInfo;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Convert;
 use SilverStripe\Core\Flushable;
 use SilverStripe\Core\Injector\Injector;
-use SilverStripe\Core\Manifest\ModuleResource;
-use SilverStripe\Core\Manifest\ModuleResourceLoader;
 use SilverStripe\Core\Manifest\VersionProvider;
 use SilverStripe\Core\Resettable;
 use SilverStripe\Forms\CheckboxField;
@@ -35,19 +31,15 @@ use SilverStripe\Forms\FormField;
 use SilverStripe\Forms\GridField\GridField;
 use SilverStripe\Forms\GridField\GridFieldDataColumns;
 use SilverStripe\Forms\GridField\GridFieldLazyLoader;
-use SilverStripe\Forms\HTMLEditor\HTMLEditorField;
-use SilverStripe\Forms\ListboxField;
 use SilverStripe\Forms\LiteralField;
 use SilverStripe\Forms\OptionsetField;
 use SilverStripe\Forms\SearchableMultiDropdownField;
 use SilverStripe\Forms\Tab;
 use SilverStripe\Forms\TabSet;
 use SilverStripe\Forms\TextareaField;
-use SilverStripe\Forms\TextField;
 use SilverStripe\Forms\ToggleCompositeField;
 use SilverStripe\Forms\TreeDropdownField;
 use SilverStripe\Forms\TreeMultiselectField;
-use SilverStripe\i18n\i18n;
 use SilverStripe\i18n\i18nEntityProvider;
 use SilverStripe\Model\List\ArrayList;
 use SilverStripe\ORM\CMSPreviewable;
@@ -57,8 +49,8 @@ use SilverStripe\ORM\DB;
 use SilverStripe\ORM\HasManyList;
 use SilverStripe\ORM\HiddenClass;
 use SilverStripe\ORM\Hierarchy\Hierarchy;
-use SilverStripe\ORM\ManyManyList;
 use SilverStripe\Core\Validation\ValidationResult;
+use SilverStripe\Forms\HiddenField;
 use SilverStripe\Security\Group;
 use SilverStripe\Security\InheritedPermissions;
 use SilverStripe\Security\InheritedPermissionsExtension;
@@ -112,7 +104,7 @@ use SilverStripe\View\SSViewer;
  * @mixin InheritedPermissionsExtension
  * @method HasManyList<SiteTreeLink> BackLinks()
  */
-class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvider, CMSPreviewable, Resettable, Flushable, MemberCacheFlusher
+class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvider, CMSPreviewable, Resettable, Flushable
 {
     /**
      * Indicates what kind of children this page type can have.
@@ -285,7 +277,6 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
         'Link' => 'Text',
         'RelativeLink' => 'Text',
         'AbsoluteLink' => 'Text',
-        'TreeTitle' => 'HTMLFragment',
         'MetaTags' => 'HTMLFragment',
     ];
 
@@ -338,21 +329,29 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
     private static $can_create = true;
 
     /**
-     * Icon to use in the CMS page tree. This should be the full filename, relative to the webroot.
-     * Also supports custom CSS rule contents (applied to the correct selector for the tree UI implementation).
+     * Icon to use in the CMS page tree.
+     *
+     * This should be one of the following:
+     * - the full filename, relative to the webroot
+     * - inline "data:image/" url string
+     * - a themed resource reference
+     * - a module resource reference
+     *
+     * If cms_icon_class has a value, cms_icon is ignored for most purposes.
      *
      * @see LeftAndMainPageIconsExtension::generatePageIconsCss()
      * @config
      * @var string
      */
-    private static $icon = null;
+    private static $cms_icon = null;
 
     /**
      * Class attached to page icons in the CMS page tree. Also supports font-icon set.
+     * Overrides cms_icon for most purposes
      * @config
      * @var string
      */
-    private static $icon_class = 'font-icon-page';
+    private static $cms_icon_class = 'font-icon-page';
 
     private static $extensions = [
         Hierarchy::class,
@@ -410,8 +409,6 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
      */
     private static $show_meta_generator_version = true;
 
-    protected $_cache_statusFlags = null;
-
     /**
      * Plural form for SiteTree / Page classes. Not inherited by subclasses.
      *
@@ -451,18 +448,6 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
      * @var string
      */
     private static $base_description = 'Generic content page';
-
-    /**
-     * @var array
-     */
-    private static $dependencies = [
-        'creatableChildrenCache' => '%$' . CacheInterface::class . '.SiteTree_CreatableChildren'
-    ];
-
-    /**
-     * @var CacheInterface
-     */
-    protected $creatableChildrenCache;
 
     /**
      * @var VersionProvider
@@ -579,8 +564,17 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
     public static function page_type_classes()
     {
         $classes = ClassInfo::getValidSubClasses();
+        SiteTree::singleton()->updateValidSubClasses($classes);
+        return $classes;
+    }
 
-        $baseClassIndex = array_search(SiteTree::class, $classes ?? []);
+    /**
+     * Update a list of classes to exclude page types that should be hidden through {@link SiteTree::$hide_pagetypes}
+     * {@see CMSMain::getValidSubClasses}
+     */
+    public function updateValidSubClasses(array &$classes): void
+    {
+        $baseClassIndex = array_search(SiteTree::class, $classes);
         if ($baseClassIndex !== false) {
             unset($classes[$baseClassIndex]);
         }
@@ -601,17 +595,26 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
         // If any of the descendents don't want any of the elders to show up, cruelly render the elders surplus to
         // requirements
         if ($kill_ancestors) {
-            $kill_ancestors = array_unique($kill_ancestors ?? []);
+            $kill_ancestors = array_unique($kill_ancestors);
             foreach ($kill_ancestors as $mark) {
                 // unset from $classes
-                $idx = array_search($mark, $classes ?? [], true);
+                $idx = array_search($mark, $classes, true);
                 if ($idx !== false) {
                     unset($classes[$idx]);
                 }
             }
         }
+    }
 
-        return $classes;
+    /**
+     * Update CSS classes for the icon used in the CMS site tree
+     * {@see CMSMain::getRecordTreeMarkup}
+     */
+    public function updateTreeIconClasses(array &$classes): void
+    {
+        if ($this->isHomePage()) {
+            $classes[] = 'homepage';
+        }
     }
 
     /**
@@ -783,12 +786,12 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
      */
     public function isCurrent()
     {
-        $currentPage = Director::get_current_page();
-        if ($currentPage instanceof ContentController) {
-            $currentPage = $currentPage->data();
+        $currentRecord = Director::get_current_page();
+        if ($currentRecord instanceof ContentController) {
+            $currentRecord = $currentRecord->data();
         }
-        if ($currentPage instanceof SiteTree) {
-            return $currentPage === $this || $currentPage->ID === $this->ID;
+        if ($currentRecord instanceof SiteTree) {
+            return $currentRecord === $this || $currentRecord->ID === $this->ID;
         }
         return false;
     }
@@ -1013,25 +1016,6 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
             return SiteTree::get_by_id(SiteTree::class, $parentID);
         }
         return null;
-    }
-
-    /**
-     * @param CacheInterface $cache
-     * @return $this
-     */
-    public function setCreatableChildrenCache(CacheInterface $cache)
-    {
-        $this->creatableChildrenCache = $cache;
-
-        return $this;
-    }
-
-    /**
-     * @return CacheInterface $cache
-     */
-    public function getCreatableChildrenCache()
-    {
-        return $this->creatableChildrenCache;
     }
 
     /**
@@ -1812,32 +1796,6 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
         parent::onAfterDelete();
     }
 
-    public function flushCache($persistent = true)
-    {
-        parent::flushCache($persistent);
-        $this->_cache_statusFlags = null;
-    }
-
-    /**
-     * Flushes the member specific cache for creatable children
-     *
-     * @param array $memberIDs
-     */
-    public function flushMemberCache($memberIDs = null)
-    {
-        $cache = SiteTree::singleton()->getCreatableChildrenCache();
-
-        if (!$memberIDs) {
-            $cache->clear();
-            return;
-        }
-
-        foreach ($memberIDs as $memberID) {
-            $key = $this->generateChildrenCacheKey($memberID);
-            $cache->delete($key);
-        }
-    }
-
     public function validate()
     {
         $result = parent::validate();
@@ -2240,6 +2198,14 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
                     LiteralField::create("ObsoleteWarningHeader", "<p class=\"alert alert-warning\">$obsoleteWarning</p>"),
                     "Title"
                 );
+            }
+
+            // Necessary for updating URLSegment when changing the default page title.
+            // LiveLink is (for better or for worse) used as part of the "is this page new?" detection.
+            $fields->push($liveLinkField = HiddenField::create('LiveLink'));
+            $liveLink = $this->getAbsoluteLiveLink();
+            if ($liveLink) {
+                $liveLinkField->setValue($liveLink);
             }
         });
 
@@ -2778,9 +2744,9 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
         // Sort alphabetically, and put current on top
         asort($result);
         if (isset($result[$this->ClassName])) {
-            $currentPageTypeName = $result[$this->ClassName];
+            $currentRecordTypeName = $result[$this->ClassName];
             unset($result[$this->ClassName]);
-            $result = [$this->ClassName => $currentPageTypeName] + $result;
+            $result = [$this->ClassName => $currentRecordTypeName] + $result;
         }
 
         return $result;
@@ -2832,41 +2798,6 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
         $this->extend('updateAllowedChildren', $allowedChildren);
 
         return $allowedChildren;
-    }
-
-    /**
-     *
-     * Gets a list of the page types that can be created under this specific page, including font icons
-     *
-     * @return array
-     */
-    public function creatableChildPages()
-    {
-        // Build the list of candidate children
-        $cache = SiteTree::singleton()->getCreatableChildrenCache();
-        $cacheKey = $this->generateChildrenCacheKey(Security::getCurrentUser() ? Security::getCurrentUser()->ID : 0);
-        $children = $cache->get($cacheKey, []);
-
-        if (!$children || !isset($children[$this->ID])) {
-            $children[$this->ID] = [];
-            $candidates = static::page_type_classes();
-
-            foreach ($candidates as $childClass) {
-                $child = singleton($childClass);
-
-                if ($child->canCreate(null, ['Parent' => $this])) {
-                    $children[$this->ID][] = [
-                        'ClassName' => $childClass,
-                        'Title' => $child->i18n_singular_name(),
-                        'IconClass' => $child->getIconClass(),
-                    ];
-                }
-            }
-
-            $cache->set($cacheKey, $children);
-        }
-
-        return $children[$this->ID];
     }
 
     /**
@@ -2925,102 +2856,6 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
         } else {
             $this->setField("MenuTitle", $value);
         }
-    }
-
-    /**
-     * A flag provides the user with additional data about the current page status, for example a "removed from draft"
-     * status. Each page can have more than one status flag. Returns a map of a unique key to a (localized) title for
-     * the flag. The unique key can be reused as a CSS class. Use the 'updateStatusFlags' extension point to customize
-     * the flags.
-     *
-     * Example (simple):
-     *   "deletedonlive" => "Deleted"
-     *
-     * Example (with optional title attribute):
-     *   "deletedonlive" => ['text' => "Deleted", 'title' => 'This page has been deleted']
-     *
-     * @param bool $cached Whether to serve the fields from cache; false regenerate them
-     * @return array
-     */
-    public function getStatusFlags($cached = true)
-    {
-        if (!$this->_cache_statusFlags || !$cached) {
-            $flags = [];
-            if ($this->isOnLiveOnly()) {
-                $flags['removedfromdraft'] = [
-                    'text' => _t(__CLASS__.'.ONLIVEONLYSHORT', 'On live only'),
-                    'title' => _t(__CLASS__.'.ONLIVEONLYSHORTHELP', 'Page is published, but has been deleted from draft'),
-                ];
-            } elseif ($this->isArchived()) {
-                $flags['archived'] = [
-                    'text' => _t(__CLASS__.'.ARCHIVEDPAGESHORT', 'Archived'),
-                    'title' => _t(__CLASS__.'.ARCHIVEDPAGEHELP', 'Page is removed from draft and live'),
-                ];
-            } elseif ($this->isOnDraftOnly()) {
-                $flags['addedtodraft'] = [
-                    'text' => _t(__CLASS__.'.ADDEDTODRAFTSHORT', 'Draft'),
-                    'title' => _t(__CLASS__.'.ADDEDTODRAFTHELP', "Page has not been published yet")
-                ];
-            } elseif ($this->isModifiedOnDraft()) {
-                $flags['modified'] = [
-                    'text' => _t(__CLASS__.'.MODIFIEDONDRAFTSHORT', 'Modified'),
-                    'title' => _t(__CLASS__.'.MODIFIEDONDRAFTHELP', 'Page has unpublished changes'),
-                ];
-            }
-
-            $this->extend('updateStatusFlags', $flags);
-
-            $this->_cache_statusFlags = $flags;
-        }
-
-        return $this->_cache_statusFlags;
-    }
-
-    /**
-     * Returns the CSS class used for the page icon in the site tree.
-     *
-     * @return string
-     */
-    public function getIconClass()
-    {
-        if ($this->config()->get('icon')) {
-            return '';
-        }
-        return $this->config()->get('icon_class');
-    }
-
-    /**
-     * getTreeTitle will return three <span> html DOM elements, an empty <span> with the class 'jstree-pageicon' in
-     * front, following by a <span> wrapping around its MenuTitle, then following by a <span> indicating its
-     * publication status.
-     *
-     * @return string An HTML string ready to be directly used in a template
-     */
-    public function getTreeTitle()
-    {
-        $children = $this->creatableChildPages();
-        $flags = $this->getStatusFlags();
-        $treeTitle = sprintf(
-            '<span class="jstree-pageicon page-icon %s class-%s%s"></span><span class="item" data-allowedchildren="%s">%s</span>',
-            $this->getIconClass(),
-            Convert::raw2htmlid(static::class),
-            $this->isHomePage() ? ' homepage' : '',
-            Convert::raw2att(json_encode($children)),
-            Convert::raw2xml(str_replace(["\n","\r"], "", $this->MenuTitle ?? ''))
-        );
-        foreach ($flags as $class => $data) {
-            if (is_string($data)) {
-                $data = ['text' => $data];
-            }
-            $treeTitle .= sprintf(
-                "<span class=\"badge %s\"%s>%s</span>",
-                'status-' . Convert::raw2xml($class),
-                (isset($data['title'])) ? sprintf(' title="%s"', Convert::raw2xml($data['title'])) : '',
-                Convert::raw2xml($data['text'])
-            );
-        }
-
-        return $treeTitle;
     }
 
     /**
@@ -3215,36 +3050,6 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
     }
 
     /**
-     * Generate link to this page's icon
-     *
-     * @return string
-     */
-    public function getPageIconURL()
-    {
-        $icon = $this->config()->get('icon');
-        if (!$icon) {
-            return null;
-        }
-        if (strpos($icon ?? '', 'data:image/') !== false) {
-            return $icon;
-        }
-
-        // Icon is relative resource
-        $iconResource = ModuleResourceLoader::singleton()->resolveResource($icon);
-        if ($iconResource instanceof ModuleResource) {
-            return $iconResource->getURL();
-        }
-
-        // Full path to file
-        if (Director::fileExists($icon)) {
-            return ModuleResourceLoader::resourceURL($icon);
-        }
-
-        // Skip invalid files
-        return null;
-    }
-
-    /**
      * Get description for this page type
      *
      * @return string|null
@@ -3341,17 +3146,6 @@ class SiteTree extends DataObject implements PermissionProvider, i18nEntityProvi
                 $page->write();
             }
         }
-    }
-
-    /**
-     * Cache key for creatableChildPages() method
-     *
-     * @param int $memberID
-     * @return string
-     */
-    protected function generateChildrenCacheKey($memberID)
-    {
-        return md5($memberID . '_' . __CLASS__);
     }
 
     /**

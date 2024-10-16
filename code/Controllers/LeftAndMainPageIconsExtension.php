@@ -18,6 +18,8 @@ use SilverStripe\View\Requirements;
 /**
  * Extension to include custom page icons
  *
+ * @TODO AAAHHHHHHHHHHH
+ *
  * @extends Extension<LeftAndMain>
  */
 class LeftAndMainPageIconsExtension extends Extension implements Flushable
@@ -60,13 +62,13 @@ class LeftAndMainPageIconsExtension extends Extension implements Flushable
         $css = '';
         $classes = ClassInfo::subclassesFor(SiteTree::class);
         foreach ($classes as $class) {
-            if (!empty(Config::inst()->get($class, 'icon_class', Config::UNINHERITED))) {
+            if (!empty(Config::inst()->get($class, 'cms_icon_class', Config::UNINHERITED))) {
                 continue;
             }
-            $iconURL = SiteTree::singleton($class)->getPageIconURL();
+            $iconURL = CMSMain::singleton()->getRecordIconUrl(SiteTree::class);
             if ($iconURL) {
                 $cssClass = Convert::raw2htmlid($class);
-                $selector = sprintf('.page-icon.class-%1$s, li.class-%1$s > a .jstree-pageicon', $cssClass);
+                $selector = sprintf('.record-icon.class-%1$s, li.class-%1$s > a .jstree-recordicon', $cssClass);
                 $css .= sprintf('%s { background: transparent url(\'%s\') 0 0 no-repeat; }', $selector, $iconURL);
             }
         }

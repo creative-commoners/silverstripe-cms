@@ -30,7 +30,7 @@ class VirtualPage extends Page
 {
     private static $description = 'Displays the content of another page';
 
-    private static $icon_class = 'font-icon-p-virtual';
+    private static $cms_icon_class = 'font-icon-p-virtual';
 
     public static $virtualFields;
 

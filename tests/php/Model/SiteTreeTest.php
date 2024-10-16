@@ -1413,6 +1413,7 @@ class SiteTreeTest extends SapphireTest
 
     public function testModifyStatusFlagByInheritance()
     {
+        //@todo move this to CMSMain test
         $node = new SiteTreeTest_StageStatusInherit();
         $treeTitle = $node->getTreeTitle();
         $this->assertStringContainsString('InheritedTitle', $treeTitle);
